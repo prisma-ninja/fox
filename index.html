@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculateur de Trajet</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .parameters-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .parameter-item {
+            display: flex;
+            flex-direction: column;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #map {
+            height: 400px;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Calculateur de Trajet</h1>
+        
+        <div class="input-group">
+            <input type="text" id="origin" placeholder="Adresse de départ" required>
+            <input type="text" id="destination" placeholder="Adresse d'arrivée" required>
+        </div>
+
+        <div class="parameters-grid">
+            <div class="parameter-item">
+                <label for="pricePerKm">Prix au km (€)</label>
+                <input type="number" id="pricePerKm" step="0.01" value="1.5">
+            </div>
+            <div class="parameter-item">
+                <label for="basePrice">Prix prise en charge (€)</label>
+                <input type="number" id="basePrice" step="0.1" value="2.5">
+            </div>
+            <div class="parameter-item">
+                <label for="avgSpeed">Vitesse moyenne (km/h)</label>
+                <input type="number" id="avgSpeed" step="1" value="50">
+            </div>
+            <div class="parameter-item">
+                <label for="surcharge">Surcoût</label>
+                <input type="number" id="surcharge" step="0.01" value="0.25" min="0" max="1">
+            </div>
+            <div class="parameter-item">
+                <label for="minPrice">Prix minimum (€)</label>
+                <input type="number" id="minPrice" step="0.01" value="9">
+            </div>
+            <div class="parameter-item">
+                <label for="tva">Taux TVA (%)</label>
+                <input type="number" id="tva" step="0.1" value="10">
+            </div>
+        </div>
+
+        <button onclick="calculateRoute()">Calculer le trajet</button>
+
+        <div id="map"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let map;
+        let directionsService;
+        let directionsRenderer;
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 46.227638, lng: 2.213749 },
+                zoom: 5
+            });
+
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            directionsRenderer.setMap(map);
+        }
+
+        function calculatePrice(distance, time) {
+            const pricePerKm = parseFloat(document.getElementById('pricePerKm').value);
+            const basePrice = parseFloat(document.getElementById('basePrice').value);
+            const avgSpeed = parseFloat(document.getElementById('avgSpeed').value);
+            const surcharge = parseFloat(document.getElementById('surcharge').value);
+            const minPrice = parseFloat(document.getElementById('minPrice').value);
+            const tva = parseFloat(document.getElementById('tva').value) / 100;
+
+            // Conversion du temps de minutes en heures
+            const timeHours = time / 60;
+            
+            // Calcul selon la formule fournie
+            let price = (pricePerKm * distance) * (1 + timeHours/(distance*(60/avgSpeed))*surcharge) + basePrice;
+            
+            // Application du prix minimum
+            price = Math.max(price, minPrice);
+            
+            // Calcul TTC
+            const priceTTC = price * (1 + tva);
+            
+            return {
+                HT: price.toFixed(2),
+                TTC: priceTTC.toFixed(2)
+            };
+        }
+
+        function calculateRoute() {
+            const origin = document.getElementById('origin').value;
+            const destination = document.getElementById('destination').value;
+
+            const request = {
+                origin: origin,
+                destination: destination,
+                travelMode: google.maps.TravelMode.DRIVING
+            };
+
+            directionsService.route(request, function(result, status) {
+                if (status == 'OK') {
+                    directionsRenderer.setDirections(result);
+                    
+                    const route = result.routes[0];
+                    const distanceText = route.legs[0].distance.text;
+                    const distanceValue = route.legs[0].distance.value / 1000; // Conversion en km
+                    const durationText = route.legs[0].duration.text;
+                    const durationValue = route.legs[0].duration.value / 60; // Conversion en minutes
+
+                    const prices = calculatePrice(distanceValue, durationValue);
+
+                    document.getElementById('results').innerHTML = `
+                        <h3>Résultats du trajet :</h3>
+                        <p>Distance : ${distanceText}</p>
+                        <p>Temps estimé : ${durationText}</p>
+                        <p>Prix HT : ${prices.HT} €</p>
+                        <p>Prix TTC : ${prices.TTC} €</p>
+                    `;
+                } else {
+                    document.getElementById('results').innerHTML = 
+                        '<p style="color: red;">Impossible de calculer l\'itinéraire. Veuillez vérifier les adresses.</p>';
+                }
+            });
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/promise-polyfill/8.3.0/polyfill.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/somanchiu/Keyless-Google-Maps-API@v6.8/mapsJavaScriptAPI.js"
+    async defer></script>
+</body>
+</html>
